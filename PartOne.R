@@ -58,7 +58,7 @@ HighTemps_C <- (HighTemps - 32) * 5/9
 convert <- function(x){
   (x-32)*5/9
 }
-
+convert()
 convert(LowTemps)
 
 #We assign the results of the conversion to a new vector
@@ -72,6 +72,7 @@ summary(MonthTemps)
 
 #Accessing vectors in dataframe
 MonthTemps$Months
+MonthTemps$HighTemps
 
 mean(MonthTemps$HighTemps)
 
