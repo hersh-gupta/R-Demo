@@ -1,91 +1,135 @@
-#####Tidyverse Introduction####
+#####Tidyverse Demo####
 #The tidyverse is a set of inter-operational packages that use a similar syntax
-#Uses pipe operator to '%>%' to pass objects to functions
-
 
 #####Install Packages####
 #Only needed to be done once
-#Packages are stored in installation directory
+#Packages are stored in installation directory, separate from the project directory
 install.packages("tidyverse")
-install.packages("tidymodels")
+install.packages("jsonlite")
+install.packages("scales")
 
 #####Load Packages####
+#Specific packages contain specific functions
+#Must be loaded everytime
 library(tidyverse)
-library(tidymodels)
+library(jsonlite)
+library(scales)
+
+#####Download and Inspect Data####
+#Data on Crime Incidents in the Last 30 Days from DC Open Data Portal
+
+#Import from DC Opendata Portal API
+#Use fromJSON(“url”) function to convert and convert json file to list
+#Save as data_json
+data_json <- fromJSON("https://opendata.arcgis.com/datasets/dc3289eab3d2400ea49c154863312434_8.geojson")
+
+#Extract only the properties dataset - we don't need geometries 
+incidents <- data_json$features$properties
+
+#Alternatively you can import dataset from csv file
+incidents <- read_csv("CrimeIncidents_30days.csv")
+
+#Look at datatypes and open dataset in viewer
+glimpse(incidents)
+View(incidents)
+
+#####Data Manipulation with the TidyVerse####
 
 #####dplyr#####
-#Main dplyr verbs: select, filter, mutate, group_by, summarize, arrange
-#Pipe in the results of one verb to another
+#Main dplyr verbs: filter, arrange, mutate, select, group_by, summarize
 
-#These are the same:
-MonthTemps %>%
-  filter(Winter == TRUE)
+filter(incidents, SHIFT == "DAY")  #Take the dataset, and return rows where SHIFT column is (==) "DAY"
 
-filter(MonthTemps, Winter == TRUE)
+arrange(incidents, WARD) #Sort the dataset by WARD in decreasing order
 
-#What is are the average temperature for the winter months vs the non-winter months?
-MonthTemps %>% #Start with the dataframe, pipe it into the following
-  select(1:4) %>% #Select columns/variables you want 
-  group_by(Winter) %>% #Group by the Winter variable
-  summarize(Avg_Low = mean(LowTemps),
-            Avg_High = mean(HighTemps)) #Calculate the averages using mean()
+mutate(incidents, Date = as.Date(REPORT_DAT)) #Convert the character column to date format
+
+select(incidents, OFFENSE, WARD) #Return only the OFFENSE and WARD columns
+
+#Pipes %>%: pipe in the results of one function to another
+
+#These are the same
+filter(incidents, SHIFT == "DAY")  
+
+incidents %>%
+  filter( SHIFT == "DAY")  
+
+#Chain together as many pipes as you want
+#Can you figure out what’s happening here?
+incidents %>%
+  mutate(incidents, Date = as.Date(REPORT_DAT))  %>%
+  arrange(incidents, Date) 
+
+#Convert the character column to date format
+incidents %>%
+  mutate(Date = as.Date(REPORT_DAT)) 
+
+#Return only the OFFENSE and WARD columns
+incidents %>%
+  select(OFFENSE, WARD) 
+
+#How many of each offense? n() gives you the number of rows
+incidents %>%
+  group_by(OFFENSE) %>%
+  summarize(count = n())
+
+#What about the proportion each offense?
+incidents %>%
+  group_by(OFFENSE) %>%
+  summarize(count = n()) %>%
+  mutate(prop = count/sum(count))
 
 
-#####ggplot#####
-#Highly customizeable plotting package
-#Call ggplot(data, aes(x,y)) + geom_{}
-#Uses '+' rather than '%>%', but works the same way
+#What if you wanted the proportion and percentage of each offense as separate columns?
+#Proportion and percentage each offense
+incidents %>%
+  group_by(OFFENSE) %>%
+  summarize(count = n()) %>%
+  mutate(prop = count/sum(count), pct = prop*100)
 
-ggplot(data = MonthTemps, aes(x = Months, y = HighTemps)) +
-  geom_point()
 
-ggplot(data = MonthTemps, aes(x = reorder(Months, HighTemps), y = HighTemps)) +
-  geom_point() +
-  labs(title = "High Temperatures over Time", x = "Months", y = "Temperatures (deg F)") +
+#Are certain offense more likely to occur at different shifts (day, evening, midnight)?
+#What would we need to answer this?
+
+#Rate of each offense by shift
+incidents %>%
+  group_by(SHIFT, OFFENSE) %>%
+  summarize(n = n()) %>%
+  group_by(SHIFT) %>%
+  mutate(pct = n/sum(n))
+
+#Save this result as a separate dataframe using the <- operator
+incidents_summary <- incidents %>%
+  group_by(SHIFT, OFFENSE) %>%
+  summarize(n = n()) %>%
+  group_by(SHIFT) %>%
+  mutate(pct = n / sum(n))
+
+
+#How can we visualize this data?
+incidents_summary 
+
+#ggplot package is used for plotting
+ggplot(incidents_summary, aes(SHIFT, pct, fill = OFFENSE)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = scales::percent(pct)), position = position_stack(vjust = 0.5)) +
+  scale_y_continuous(labels = scales::percent) +
+  labs(title = "Crime Incidents by Shift and Offense Category",  
+       subtitle = "in the last 30 days",  y = "",  x = "Shift") +
   theme_minimal()
 
-#####Real Example####
+#Are certain offense more likely to occur at different shifts (day, evening, midnight)?
+#Is there a statistically significant relationship between shifts and offenses?
+#What’s the strength of the relationship between shifts and offenses?
 
-#Load data
-countries <- read_csv("Countries.csv")
+#Chi-square test is built into R
+chisq.test(incidents$SHIFT, incidents$OFFENSE, simulate.p.value = T)
 
-#What does the data look like?
-View(countries)
-glimpse(countries)
+#Package for additional statistical tests
+require("vcd")
 
-#Create a plot of the GDP Per Capita and Life Expectancy
-ggplot(countries, aes(gdpPercap, lifeExp)) + 
-  geom_point() 
+vcd::assocstats(table(incidents$OFFENSE, incidents$SHIFT))
 
-#Make a cleaner plot
-ggplot(countries, aes(gdpPercap, lifeExp)) + 
-  geom_point(alpha = 0.3) + #alpha sets the opacity of each point
-  scale_x_log10(labels = scales::dollar) + #use log-scale on x axis, and format it to dollars
-  geom_smooth(method = "lm") + #line of best fit using a linear model (lm)
-  labs(x = "GDP Per Capita", y = "Life Expectancy in Years",
-       title = "Economic Growth and Life Expectancy",
-       subtitle = "Data points are country-years",
-       caption = "Source: Gapminder.") #add plot labels
 
-#####Modeling in R#####
-#Use the lm() function to create a model
-#The formula is specified by y ~ x: "Y is modeled by X"
 
-model <- lm(formula = lifeExp ~ log(gdpPercap) + pop, data = countries)
 
-#Get the model results
-summary(model) #Full summary of model
-tidy(model) #Model coefficient summary metrics
-glance(model) #Model fit metrics
-augment(model) #Observation-level metrics
-
-#Plot model coefficients
-tidy(model, conf.int = T) %>%
-  ggplot(aes(x = term, y = estimate, ymin = conf.low, ymax = conf.high)) + 
-    geom_pointrange() + 
-    coord_flip() 
-
-#Plot model residuals vs fitted
-augment(model) %>%
-  ggplot(aes(x = .fitted, y = .resid)) + 
-  geom_point()
